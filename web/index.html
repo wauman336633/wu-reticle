@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WU Custom Reticle Studio</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ====================================================================
+       1. 常駐 HUD レティクルオーバーレイ（画面中央に固定・マウス透過）
+       ==================================================================== -->
+  <div id="hud-reticle-container" class="hud-hidden" aria-hidden="true">
+    <div id="editor-center-guide" class="center-guide hidden"></div>
+    <svg
+      id="hud-reticle-svg"
+      width="320"
+      height="320"
+      viewBox="-160 -160 320 320"
+      xmlns="http://www.w3.org/2000/svg"
+    ></svg>
+  </div>
+
+  <!-- ====================================================================
+       2. レティクルエディタ サイドパネル（画面中央を遮らない配置）
+       ==================================================================== -->
+  <div id="app" class="editor-root pos-right hidden" role="dialog" aria-modal="true" aria-labelledby="ui-title">
+    <aside class="studio-panel">
+      <!-- Header -->
+      <header class="studio-header">
+        <div class="header-titles">
+          <div class="badge-row">
+            <span class="mod-badge">RETICLE STUDIO</span>
+            <span id="preset-counter-badge" class="meta-badge">0 / 20</span>
+          </div>
+          <h1 id="ui-title" data-i18n="ui_title">カスタムレティクル・スタジオ</h1>
+          <p id="ui-subtitle" data-i18n="ui_subtitle">レイヤー合成 ＆ シェアコード共有</p>
+        </div>
+        <div class="header-actions">
+          <button id="btn-reset" type="button" class="btn btn-ghost btn-sm" data-i18n="ui_reset">初期化</button>
+          <button id="btn-close" type="button" class="btn-icon" title="Close (ESC)" aria-label="Close">✕</button>
+        </div>
+      </header>
+
+      <!-- Live Zoom Preview Card -->
+      <section class="preview-section">
+        <div class="preview-header-bar">
+          <span class="preview-label" data-i18n="preview_title">拡大プレビュー（画面中央にも実寸反映中）</span>
+          <div class="bg-switcher" role="group" aria-label="Preview Background">
+            <button type="button" class="bg-btn active" data-bg="night" data-i18n="bg_night">夜間 (暗)</button>
+            <button type="button" class="bg-btn" data-bg="day" data-i18n="bg_day">昼空 (明)</button>
+            <button type="button" class="bg-btn" data-bg="urban" data-i18n="bg_urban">市街地</button>
+            <button type="button" class="bg-btn" data-bg="transparent" data-i18n="bg_transparent">透過</button>
+          </div>
+        </div>
+
+        <div id="preview-stage" class="preview-stage bg-night">
+          <div class="preview-cross-hairline"></div>
+          <svg
+            id="preview-reticle-svg"
+            width="220"
+            height="130"
+            viewBox="-110 -65 220 130"
+            xmlns="http://www.w3.org/2000/svg"
+          ></svg>
+          <div class="preview-zoom-tag">2.0x ZOOM</div>
+        </div>
+
+        <!-- Global Scale & Opacity Bar -->
+        <div class="global-controls-bar">
+          <div class="compact-slider">
+            <div class="slider-top">
+              <span data-i18n="label_global_scale">全体スケール (%)</span>
+              <output id="val-global-scale">100%</output>
+            </div>
+            <input id="input-global-scale" type="range" min="50" max="200" step="5" value="100" />
+          </div>
+          <div class="compact-slider">
+            <div class="slider-top">
+              <span data-i18n="label_global_opacity">全体不透明度 (%)</span>
+              <output id="val-global-opacity">100%</output>
+            </div>
+            <input id="input-global-opacity" type="range" min="10" max="100" step="5" value="100" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Feedback Banner -->
+      <div id="feedback-banner" class="feedback-banner hidden" role="status" aria-live="polite"></div>
+
+      <!-- Navigation Tabs -->
+      <nav class="studio-tabs" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="standard" role="tab" data-i18n="tab_standard">基本スロット (4)</button>
+        <button type="button" class="tab-btn" data-tab="layers" role="tab">
+          <span data-i18n="tab_layers">追加レイヤー</span>
+          <span id="tab-layer-count" class="tab-pill">0</span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="display" role="tab" data-i18n="tab_display">表示・動作設定</button>
+        <button type="button" class="tab-btn" data-tab="presets" role="tab" data-i18n="tab_presets">プリセット ＆ 共有</button>
+      </nav>
+
+      <!-- Tab Content Container -->
+      <div class="studio-body">
+        <!-- TAB 1: 標準4スロット -->
+        <div id="tab-pane-standard" class="tab-pane active">
+          <div id="standard-slots-container" class="slots-list"></div>
+        </div>
+
+        <!-- TAB 2: 追加カスタムレイヤー (最大6) -->
+        <div id="tab-pane-layers" class="tab-pane">
+          <div class="layers-toolbar">
+            <button id="btn-add-layer" type="button" class="btn btn-primary btn-block" data-i18n="btn_add_layer">
+              ＋ カスタムレイヤーを追加
+            </button>
+          </div>
+          <div id="custom-layers-container" class="slots-list"></div>
+        </div>
+
+        <!-- TAB 3: 表示タイミング・動作設定 -->
+        <div id="tab-pane-display" class="tab-pane">
+          <div class="panel-card">
+            <h2 class="section-title" data-i18n="display_mode_title">レティクル表示タイミング</h2>
+            <p class="section-desc" data-i18n="display_mode_desc">
+              ゲーム内でカスタムレティクルを表示する条件を選択します。
+            </p>
+            <div id="display-modes-list" class="mode-cards"></div>
+          </div>
+
+          <div class="panel-card">
+            <label class="toggle-row">
+              <span data-i18n="opt_hide_on_scope">スナイパースコープ覗き込み中は自動で隠す</span>
+              <input id="opt-hide-on-scope" type="checkbox" checked />
+            </label>
+            <label class="toggle-row">
+              <span data-i18n="opt_show_in_fp">一人称視点 (FPS) エイム中も表示する</span>
+              <input id="opt-show-in-fp" type="checkbox" checked />
+            </label>
+          </div>
+        </div>
+
+        <!-- TAB 4: プリセット ＆ テキスト共有 -->
+        <div id="tab-pane-presets" class="tab-pane">
+          <!-- Share Code Card -->
+          <div class="panel-card">
+            <h2 class="section-title" data-i18n="share_title">テキスト共有コード (RT1形式)</h2>
+            <p class="section-desc" data-i18n="share_desc">
+              現在のレティクルを短い1行テキストとしてコピーしたり、他の人や別環境のコードを貼り付けて即座に読み込めます。
+            </p>
+
+            <div class="share-code-row">
+              <input
+                id="input-share-code"
+                type="text"
+                class="code-input"
+                spellcheck="false"
+                autocomplete="off"
+                data-i18n-placeholder="placeholder_share_code"
+                placeholder="RT1:... から始まる共有コードを貼り付け"
+              />
+              <button id="btn-copy-code" type="button" class="btn btn-secondary" data-i18n="btn_copy_code">
+                コードをコピー
+              </button>
+              <button id="btn-import-code" type="button" class="btn btn-primary" data-i18n="btn_import_code">
+                コードを読込
+              </button>
+            </div>
+          </div>
+
+          <!-- Save Preset Card -->
+          <div class="panel-card">
+            <h2 class="section-title" data-i18n="preset_save_title">現在のレティクルをマイプリセットに保存</h2>
+            <div class="preset-save-row">
+              <input
+                id="input-preset-name"
+                type="text"
+                class="text-input"
+                maxlength="36"
+                data-i18n-placeholder="placeholder_preset_name"
+                placeholder="プリセット名を入力 (例: アサルト用シアン)"
+              />
+              <button id="btn-save-preset" type="button" class="btn btn-primary" data-i18n="btn_save_new_preset">
+                新規保存
+              </button>
+            </div>
+          </div>
+
+          <!-- My Presets List -->
+          <div class="panel-card">
+            <div class="card-header-flex">
+              <h2 class="section-title" data-i18n="my_presets_title">マイプリセット一覧</h2>
+              <span id="my-presets-count-label" class="muted-tag">0 / 20</span>
+            </div>
+            <div id="my-presets-list" class="preset-grid"></div>
+          </div>
+
+          <!-- Built-in Server Presets List -->
+          <div class="panel-card">
+            <h2 class="section-title" data-i18n="builtin_presets_title">サーバー標準プリセット</h2>
+            <div id="builtin-presets-list" class="preset-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <footer class="studio-footer">
+        <div class="footer-code-preview">
+          <span class="code-prefix-tag">CODE</span>
+          <input id="footer-live-code" type="text" readonly class="footer-code-input" title="Click to copy" />
+        </div>
+        <button id="btn-apply-close" type="button" class="btn btn-primary" data-i18n="ui_apply_close">
+          適用して閉じる
+        </button>
+      </footer>
+    </aside>
+  </div>
+
+  <!-- クリップボードコピー用フォールバック領域 -->
+  <textarea id="clipboard-helper" aria-hidden="true" tabindex="-1"></textarea>
+
+  <script src="app.js"></script>
+</body>
+</html>

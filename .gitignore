@@ -1,0 +1,14 @@
+# OS / Editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.bak
+*.tmp
+*.swp
+*~
+.vscode/
+.idea/
+
+# Local private overrides (if used)
+config/server.local.lua
+*.env
