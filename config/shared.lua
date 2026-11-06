@@ -55,7 +55,7 @@ Config.DefaultDisplayMode = 'aim_only'
 Config.AllowedDisplayModes = {
     aim_only = true,
     armed    = true,
-    always   = true,
+    always   = false,
     off      = true,
 }
 
