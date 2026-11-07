@@ -1,63 +1,60 @@
 /**
- * WU Custom Reticle Studio - Zero-Build NUI Engine
- *
- * Features:
- * - 4 Standard Slots (Dot, Inner Cross, Outer Cross, Circle/Arc) + Up to 6 Custom Shape Layers
- * - Real-time SVG rendering on both the live HUD center overlay and 2.0x Zoom Preview
- * - Compact 1-line RT1:... differential share code encoder/decoder
- * - Personal preset management (Client KVP + Server Storage hybrid sync)
- * - Server-admin display mode enforcement (aim_only / armed / always / off)
+ * WU Custom Reticle Studio - Zero-Build NUI Engine (v1.1.0 Optimized)
  */
 (function () {
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  const $ = (id) => document.getElementById(id);
 
   // DOM References
-  const appEl = document.getElementById('app');
-  const hudContainer = document.getElementById('hud-reticle-container');
-  const hudSvg = document.getElementById('hud-reticle-svg');
-  const centerGuide = document.getElementById('editor-center-guide');
-  const previewStage = document.getElementById('preview-stage');
-  const previewSvg = document.getElementById('preview-reticle-svg');
+  const appEl = $('app');
+  const hudContainer = $('hud-reticle-container');
+  const hudSvg = $('hud-reticle-svg');
+  const centerGuide = $('editor-center-guide');
+  const previewStage = $('preview-stage');
+  const previewSvg = $('preview-reticle-svg');
 
-  const btnClose = document.getElementById('btn-close');
-  const btnReset = document.getElementById('btn-reset');
-  const btnApplyClose = document.getElementById('btn-apply-close');
-  const btnAddLayer = document.getElementById('btn-add-layer');
-  const btnCopyCode = document.getElementById('btn-copy-code');
-  const btnImportCode = document.getElementById('btn-import-code');
-  const btnSavePreset = document.getElementById('btn-save-preset');
+  const btnClose = $('btn-close');
+  const btnReset = $('btn-reset');
+  const btnApplyClose = $('btn-apply-close');
+  const btnAddLayer = $('btn-add-layer');
+  const btnCopyCode = $('btn-copy-code');
+  const btnImportCode = $('btn-import-code');
+  const btnSavePreset = $('btn-save-preset');
 
-  const inputGlobalScale = document.getElementById('input-global-scale');
-  const valGlobalScale = document.getElementById('val-global-scale');
-  const inputGlobalOpacity = document.getElementById('input-global-opacity');
-  const valGlobalOpacity = document.getElementById('val-global-opacity');
+  const inputGlobalScale = $('input-global-scale');
+  const valGlobalScale = $('val-global-scale');
+  const inputGlobalOpacity = $('input-global-opacity');
+  const valGlobalOpacity = $('val-global-opacity');
 
-  const inputShareCode = document.getElementById('input-share-code');
-  const footerLiveCode = document.getElementById('footer-live-code');
-  const inputPresetName = document.getElementById('input-preset-name');
+  const inputShareCode = $('input-share-code');
+  const footerLiveCode = $('footer-live-code');
+  const inputPresetName = $('input-preset-name');
 
-  const standardSlotsContainer = document.getElementById('standard-slots-container');
-  const customLayersContainer = document.getElementById('custom-layers-container');
-  const displayModesList = document.getElementById('display-modes-list');
-  const myPresetsList = document.getElementById('my-presets-list');
-  const builtinPresetsList = document.getElementById('builtin-presets-list');
+  const standardSlotsContainer = $('standard-slots-container');
+  const customLayersContainer = $('custom-layers-container');
+  const displayModesList = $('display-modes-list');
+  const myPresetsList = $('my-presets-list');
+  const builtinPresetsList = $('builtin-presets-list');
 
-  const optHideOnScope = document.getElementById('opt-hide-on-scope');
-  const optShowInFp = document.getElementById('opt-show-in-fp');
+  const optHideOnScope = $('opt-hide-on-scope');
+  const optShowInFp = $('opt-show-in-fp');
 
-  const tabLayerCount = document.getElementById('tab-layer-count');
-  const presetCounterBadge = document.getElementById('preset-counter-badge');
-  const myPresetsCountLabel = document.getElementById('my-presets-count-label');
-  const feedbackBanner = document.getElementById('feedback-banner');
-  const clipboardHelper = document.getElementById('clipboard-helper');
+  const tabLayerCount = $('tab-layer-count');
+  const presetCounterBadge = $('preset-counter-badge');
+  const myPresetsCountLabel = $('my-presets-count-label');
+  const feedbackBanner = $('feedback-banner');
+  const clipboardHelper = $('clipboard-helper');
 
   // Runtime State
   let isOpen = false;
+  let rafId = 0;
+  let feedbackTimer = null;
   let currentLocales = {};
+
   let serverConfig = {
-    allowedDisplayModes: { aim_only: true, armed: true, always: true, off: true },
+    allowedDisplayModes: { aim_only: true, armed: true, always: false, off: true },
     maxPlayerPresets: 20,
     maxCustomLayers: 6,
     defaultShareCode:
@@ -74,29 +71,42 @@
   };
 
   let reticleModel = createDefaultReticle();
-  let feedbackTimer = null;
 
   // ==========================================================================
-  // 1. Default Reticle Model & Validation Helpers
+  // 1. Default Reticle Model & Helpers
   // ==========================================================================
 
   function clamp(num, min, max, fallback) {
     const n = Number(num);
-    if (!Number.isFinite(n)) return fallback;
-    return Math.min(max, Math.max(min, n));
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
   }
 
   function sanitizeHex(hex, fallback = '#00ffcc') {
     if (typeof hex !== 'string') return fallback;
     const clean = hex.trim().replace(/^#/, '');
-    if (/^[0-9a-fA-F]{6}$/.test(clean)) {
-      return `#${clean.toLowerCase()}`;
-    }
-    return fallback;
+    return /^[0-9a-fA-F]{6}$/.test(clean) ? `#${clean.toLowerCase()}` : fallback;
   }
 
   function stripHash(hex) {
     return sanitizeHex(hex).slice(1);
+  }
+
+  function createCrossDefaults(enabled, length, gap, opacity = 100) {
+    return {
+      enabled,
+      tStyle: false,
+      length,
+      thickness: 2,
+      gap,
+      rotation: 0,
+      color: '#00ffcc',
+      opacity,
+      outline: true,
+      outlineWidth: 1,
+      outlineColor: '#000000',
+      outlineOpacity: 80,
+      roundCaps: false,
+    };
   }
 
   function createDefaultReticle() {
@@ -106,7 +116,7 @@
       globalOpacity: 100,
       dot: {
         enabled: true,
-        shape: 'c', // 'c': circle, 's': square, 'd': diamond, 'r': hollow ring
+        shape: 'c',
         size: 3,
         color: '#00ffcc',
         opacity: 100,
@@ -115,36 +125,8 @@
         outlineColor: '#000000',
         outlineOpacity: 80,
       },
-      inner: {
-        enabled: true,
-        tStyle: false,
-        length: 6,
-        thickness: 2,
-        gap: 3,
-        rotation: 0,
-        color: '#00ffcc',
-        opacity: 100,
-        outline: true,
-        outlineWidth: 1,
-        outlineColor: '#000000',
-        outlineOpacity: 80,
-        roundCaps: false,
-      },
-      outer: {
-        enabled: false,
-        tStyle: false,
-        length: 4,
-        thickness: 2,
-        gap: 12,
-        rotation: 0,
-        color: '#00ffcc',
-        opacity: 80,
-        outline: true,
-        outlineWidth: 1,
-        outlineColor: '#000000',
-        outlineOpacity: 80,
-        roundCaps: false,
-      },
+      inner: createCrossDefaults(true, 6, 3, 100),
+      outer: createCrossDefaults(false, 4, 12, 80),
       circle: {
         enabled: false,
         radius: 12,
@@ -164,7 +146,7 @@
 
   function createDefaultCustomLayer(shape = 'chevron') {
     return {
-      shape: shape, // 'cross' | 'tcross' | 'circle' | 'dot' | 'chevron' | 'line'
+      shape,
       enabled: true,
       size: 6,
       thickness: 2,
@@ -188,87 +170,44 @@
 
   function encodeReticleToRT1(model) {
     const parts = [];
-
     const safeName = String(model.name || 'Custom')
       .replace(/[;|=,<>]/g, '')
       .trim()
       .slice(0, 28);
-    if (safeName && safeName !== 'Custom Reticle') {
-      parts.push(`n=${safeName}`);
-    }
+    if (safeName && safeName !== 'Custom Reticle') parts.push(`n=${safeName}`);
 
     const gScale = clamp(model.globalScale, 50, 200, 100);
     const gOp = clamp(model.globalOpacity, 10, 100, 100);
-    if (gScale !== 100 || gOp !== 100) {
-      parts.push(`g=${gScale},${gOp}`);
-    }
+    if (gScale !== 100 || gOp !== 100) parts.push(`g=${gScale},${gOp}`);
 
-    // Dot: enabled,shape,size,color,opacity,outline,outlineWidth,outlineColor,outlineOpacity
     const d = model.dot;
     if (d && d.enabled) {
       parts.push(
-        `d=1,${d.shape || 'c'},${clamp(d.size, 1, 30, 3)},${stripHash(d.color)},${clamp(
-          d.opacity,
-          0,
-          100,
-          100
-        )},${d.outline ? 1 : 0},${clamp(d.outlineWidth, 1, 6, 1)},${stripHash(
-          d.outlineColor
-        )},${clamp(d.outlineOpacity, 0, 100, 80)}`
+        `d=1,${d.shape || 'c'},${clamp(d.size, 1, 30, 3)},${stripHash(d.color)},${clamp(d.opacity, 0, 100, 100)},${d.outline ? 1 : 0},${clamp(d.outlineWidth, 1, 6, 1)},${stripHash(d.outlineColor)},${clamp(d.outlineOpacity, 0, 100, 80)}`
       );
     } else {
       parts.push('d=0');
     }
 
-    // Inner: enabled,tStyle,length,thickness,gap,rotation,color,opacity,outline,outlineWidth,outlineColor,outlineOpacity,roundCaps
-    const encodeCrossSlot = (key, s) => {
+    const encodeCross = (key, s) => {
       if (s && s.enabled) {
         parts.push(
-          `${key}=1,${s.tStyle ? 1 : 0},${clamp(s.length, 1, 60, 6)},${clamp(
-            s.thickness,
-            1,
-            20,
-            2
-          )},${clamp(s.gap, -20, 60, 3)},${clamp(s.rotation, 0, 360, 0)},${stripHash(
-            s.color
-          )},${clamp(s.opacity, 0, 100, 100)},${s.outline ? 1 : 0},${clamp(
-            s.outlineWidth,
-            1,
-            6,
-            1
-          )},${stripHash(s.outlineColor)},${clamp(s.outlineOpacity, 0, 100, 80)},${
-            s.roundCaps ? 1 : 0
-          }`
+          `${key}=1,${s.tStyle ? 1 : 0},${clamp(s.length, 1, 60, 6)},${clamp(s.thickness, 1, 20, 2)},${clamp(s.gap, -20, 60, 3)},${clamp(s.rotation, 0, 360, 0)},${stripHash(s.color)},${clamp(s.opacity, 0, 100, 100)},${s.outline ? 1 : 0},${clamp(s.outlineWidth, 1, 6, 1)},${stripHash(s.outlineColor)},${clamp(s.outlineOpacity, 0, 100, 80)},${s.roundCaps ? 1 : 0}`
         );
       } else if (key === 'i') {
         parts.push('i=0');
       }
     };
+    encodeCross('i', model.inner);
+    encodeCross('o', model.outer);
 
-    encodeCrossSlot('i', model.inner);
-    encodeCrossSlot('o', model.outer);
-
-    // Circle: enabled,radius,thickness,arc,rotation,color,opacity,outline,outlineWidth,outlineColor,outlineOpacity
     const c = model.circle;
     if (c && c.enabled) {
       parts.push(
-        `c=1,${clamp(c.radius, 2, 100, 12)},${clamp(c.thickness, 1, 16, 2)},${clamp(
-          c.arc,
-          30,
-          360,
-          360
-        )},${clamp(c.rotation, 0, 360, 0)},${stripHash(c.color)},${clamp(
-          c.opacity,
-          0,
-          100,
-          85
-        )},${c.outline ? 1 : 0},${clamp(c.outlineWidth, 1, 6, 1)},${stripHash(
-          c.outlineColor
-        )},${clamp(c.outlineOpacity, 0, 100, 75)}`
+        `c=1,${clamp(c.radius, 2, 100, 12)},${clamp(c.thickness, 1, 16, 2)},${clamp(c.arc, 30, 360, 360)},${clamp(c.rotation, 0, 360, 0)},${stripHash(c.color)},${clamp(c.opacity, 0, 100, 85)},${c.outline ? 1 : 0},${clamp(c.outlineWidth, 1, 6, 1)},${stripHash(c.outlineColor)},${clamp(c.outlineOpacity, 0, 100, 75)}`
       );
     }
 
-    // Custom Layers: shape,enabled,size,thickness,gap,angle,rotation,offsetX,offsetY,color,opacity,outline,outlineWidth,outlineColor,outlineOpacity
     if (Array.isArray(model.layers) && model.layers.length > 0) {
       const maxL = serverConfig.maxCustomLayers || 6;
       const layerTokens = [];
@@ -294,9 +233,7 @@
           ].join(',')
         );
       });
-      if (layerTokens.length > 0) {
-        parts.push(`L=${layerTokens.join('|')}`);
-      }
+      if (layerTokens.length > 0) parts.push(`L=${layerTokens.join('|')}`);
     }
 
     return `RT1:${parts.join(';')}`;
@@ -307,7 +244,6 @@
     const trimmed = codeStr.trim();
     if (!trimmed.startsWith('RT1:')) return { ok: false };
 
-    const body = trimmed.slice(4);
     const model = createDefaultReticle();
     model.dot.enabled = false;
     model.inner.enabled = false;
@@ -315,8 +251,7 @@
     model.circle.enabled = false;
     model.layers = [];
 
-    const segments = body.split(';');
-    for (const seg of segments) {
+    for (const seg of trimmed.slice(4).split(';')) {
       if (!seg) continue;
       const eqIdx = seg.indexOf('=');
       if (eqIdx === -1) continue;
@@ -333,8 +268,7 @@
         const p = val.split(',');
         model.dot.enabled = p[0] === '1';
         if (p.length > 1) {
-          const validShapes = ['c', 's', 'd', 'r'];
-          model.dot.shape = validShapes.includes(p[1]) ? p[1] : 'c';
+          model.dot.shape = ['c', 's', 'd', 'r'].includes(p[1]) ? p[1] : 'c';
           model.dot.size = clamp(p[2], 1, 30, 3);
           model.dot.color = sanitizeHex(p[3], '#00ffcc');
           model.dot.opacity = clamp(p[4], 0, 100, 100);
@@ -379,30 +313,31 @@
       } else if (key === 'L' && val) {
         const maxL = serverConfig.maxCustomLayers || 6;
         const validShapes = ['cross', 'tcross', 'circle', 'dot', 'chevron', 'line'];
-        const rawItems = val.split('|').slice(0, maxL);
-        rawItems.forEach((raw) => {
-          const p = raw.split(',');
-          if (p.length < 2) return;
-          const ly = createDefaultCustomLayer(validShapes.includes(p[0]) ? p[0] : 'chevron');
-          ly.enabled = p[1] !== '0';
-          ly.size = clamp(p[2], 1, 60, 6);
-          ly.thickness = clamp(p[3], 1, 20, 2);
-          ly.gap = clamp(p[4], -20, 60, 4);
-          ly.angle = clamp(p[5], 15, 360, 75);
-          ly.rotation = clamp(p[6], 0, 360, 0);
-          ly.offsetX = clamp(p[7], -120, 120, 0);
-          ly.offsetY = clamp(p[8], -120, 120, 0);
-          ly.color = sanitizeHex(p[9], '#00ffcc');
-          ly.opacity = clamp(p[10], 0, 100, 100);
-          ly.outline = p[11] !== '0';
-          ly.outlineWidth = clamp(p[12], 1, 6, 1);
-          ly.outlineColor = sanitizeHex(p[13], '#000000');
-          ly.outlineOpacity = clamp(p[14], 0, 100, 80);
-          model.layers.push(ly);
-        });
+        val
+          .split('|')
+          .slice(0, maxL)
+          .forEach((raw) => {
+            const p = raw.split(',');
+            if (p.length < 2) return;
+            const ly = createDefaultCustomLayer(validShapes.includes(p[0]) ? p[0] : 'chevron');
+            ly.enabled = p[1] !== '0';
+            ly.size = clamp(p[2], 1, 60, 6);
+            ly.thickness = clamp(p[3], 1, 20, 2);
+            ly.gap = clamp(p[4], -20, 60, 4);
+            ly.angle = clamp(p[5], 15, 360, 75);
+            ly.rotation = clamp(p[6], 0, 360, 0);
+            ly.offsetX = clamp(p[7], -120, 120, 0);
+            ly.offsetY = clamp(p[8], -120, 120, 0);
+            ly.color = sanitizeHex(p[9], '#00ffcc');
+            ly.opacity = clamp(p[10], 0, 100, 100);
+            ly.outline = p[11] !== '0';
+            ly.outlineWidth = clamp(p[12], 1, 6, 1);
+            ly.outlineColor = sanitizeHex(p[13], '#000000');
+            ly.outlineOpacity = clamp(p[14], 0, 100, 80);
+            model.layers.push(ly);
+          });
       }
     }
-
     return { ok: true, data: model };
   }
 
@@ -410,38 +345,29 @@
   // 3. SVG Vector Rendering Engine
   // ==========================================================================
 
-  function createSvgEl(tag, attrs = {}) {
+  function createSvgEl(tag, attrs) {
     const el = document.createElementNS(SVG_NS, tag);
-    Object.entries(attrs).forEach(([k, v]) => {
-      if (v !== undefined && v !== null) {
-        el.setAttribute(k, String(v));
-      }
-    });
+    for (const k in attrs) {
+      const v = attrs[k];
+      if (v !== undefined && v !== null) el.setAttribute(k, String(v));
+    }
     return el;
   }
 
   function describeArcPath(cx, cy, r, degSpan) {
     const span = clamp(degSpan, 1, 359.9, 180);
-    const startAngle = -90 - span / 2;
-    const endAngle = -90 + span / 2;
-    const startRad = (startAngle * Math.PI) / 180;
-    const endRad = (endAngle * Math.PI) / 180;
-    const x1 = cx + r * Math.cos(startRad);
-    const y1 = cy + r * Math.sin(startRad);
-    const x2 = cx + r * Math.cos(endRad);
-    const y2 = cy + r * Math.sin(endRad);
-    const largeArcFlag = span > 180 ? 1 : 0;
-    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(
-      2
-    )} 0 ${largeArcFlag} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+    const sRad = ((-90 - span / 2) * Math.PI) / 180;
+    const eRad = ((-90 + span / 2) * Math.PI) / 180;
+    const x1 = cx + r * Math.cos(sRad);
+    const y1 = cy + r * Math.sin(sRad);
+    const x2 = cx + r * Math.cos(eRad);
+    const y2 = cy + r * Math.sin(eRad);
+    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 ${span > 180 ? 1 : 0} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
   }
 
   function renderDotGroup(parentG, d, ox = 0, oy = 0, rot = 0) {
     if (!d || !d.enabled) return;
-    const g = createSvgEl('g', {
-      transform: `translate(${ox}, ${oy}) rotate(${rot})`,
-    });
-
+    const g = createSvgEl('g', { transform: `translate(${ox}, ${oy}) rotate(${rot})` });
     const size = clamp(d.size, 1, 40, 3);
     const shape = d.shape || 'c';
     const mainOp = clamp(d.opacity, 0, 100, 100) / 100;
@@ -449,14 +375,13 @@
     const outW = d.outline ? clamp(d.outlineWidth, 1, 6, 1) : 0;
 
     if (shape === 'r') {
-      // Hollow ring dot
       const r = Math.max(1.5, size);
       if (outW > 0) {
         g.appendChild(
           createSvgEl('circle', {
             cx: 0,
             cy: 0,
-            r: r,
+            r,
             fill: 'none',
             stroke: d.outlineColor,
             'stroke-width': 2 + outW * 2,
@@ -468,7 +393,7 @@
         createSvgEl('circle', {
           cx: 0,
           cy: 0,
-          r: r,
+          r,
           fill: 'none',
           stroke: d.color,
           'stroke-width': 2,
@@ -476,65 +401,31 @@
         })
       );
     } else if (shape === 's' || shape === 'd') {
-      const rotExtra = shape === 'd' ? 45 : 0;
       const half = size / 2;
+      const baseAttrs = {
+        x: -half,
+        y: -half,
+        width: size,
+        height: size,
+        fill: d.color,
+        'fill-opacity': mainOp,
+        transform: shape === 'd' ? 'rotate(45)' : undefined,
+      };
       if (outW > 0) {
-        g.appendChild(
-          createSvgEl('rect', {
-            x: -half,
-            y: -half,
-            width: size,
-            height: size,
-            fill: d.color,
-            'fill-opacity': mainOp,
-            stroke: d.outlineColor,
-            'stroke-width': outW,
-            'stroke-opacity': outOp,
-            transform: rotExtra ? `rotate(${rotExtra})` : undefined,
-          })
-        );
-      } else {
-        g.appendChild(
-          createSvgEl('rect', {
-            x: -half,
-            y: -half,
-            width: size,
-            height: size,
-            fill: d.color,
-            'fill-opacity': mainOp,
-            transform: rotExtra ? `rotate(${rotExtra})` : undefined,
-          })
-        );
+        baseAttrs.stroke = d.outlineColor;
+        baseAttrs['stroke-width'] = outW;
+        baseAttrs['stroke-opacity'] = outOp;
       }
+      g.appendChild(createSvgEl('rect', baseAttrs));
     } else {
-      // Standard circle dot
-      const r = size / 2;
+      const baseAttrs = { cx: 0, cy: 0, r: size / 2, fill: d.color, 'fill-opacity': mainOp };
       if (outW > 0) {
-        g.appendChild(
-          createSvgEl('circle', {
-            cx: 0,
-            cy: 0,
-            r: r,
-            fill: d.color,
-            'fill-opacity': mainOp,
-            stroke: d.outlineColor,
-            'stroke-width': outW,
-            'stroke-opacity': outOp,
-          })
-        );
-      } else {
-        g.appendChild(
-          createSvgEl('circle', {
-            cx: 0,
-            cy: 0,
-            r: r,
-            fill: d.color,
-            'fill-opacity': mainOp,
-          })
-        );
+        baseAttrs.stroke = d.outlineColor;
+        baseAttrs['stroke-width'] = outW;
+        baseAttrs['stroke-opacity'] = outOp;
       }
+      g.appendChild(createSvgEl('circle', baseAttrs));
     }
-
     parentG.appendChild(g);
   }
 
@@ -548,24 +439,15 @@
     const outOp = clamp(s.outlineOpacity, 0, 100, 80) / 100;
     const outW = s.outline ? clamp(s.outlineWidth, 1, 6, 1) : 0;
     const rx = s.roundCaps ? thick / 2 : 0;
-
-    const g = createSvgEl('g', {
-      transform: `translate(${ox}, ${oy}) rotate(${rot})`,
-    });
-
     const halfT = thick / 2;
+
+    const g = createSvgEl('g', { transform: `translate(${ox}, ${oy}) rotate(${rot})` });
     const arms = [
-      // Right
       { x: gap, y: -halfT, w: len, h: thick },
-      // Left
       { x: -(gap + len), y: -halfT, w: len, h: thick },
-      // Bottom
       { x: -halfT, y: gap, w: thick, h: len },
     ];
-    if (!s.tStyle) {
-      // Top
-      arms.push({ x: -halfT, y: -(gap + len), w: thick, h: len });
-    }
+    if (!s.tStyle) arms.push({ x: -halfT, y: -(gap + len), w: thick, h: len });
 
     arms.forEach((arm) => {
       if (outW > 0) {
@@ -587,13 +469,12 @@
           y: arm.y,
           width: arm.w,
           height: arm.h,
-          rx: rx,
+          rx,
           fill: s.color,
           'fill-opacity': mainOp,
         })
       );
     });
-
     parentG.appendChild(g);
   }
 
@@ -607,17 +488,14 @@
     const outOp = clamp(c.outlineOpacity, 0, 100, 75) / 100;
     const outW = c.outline ? clamp(c.outlineWidth, 1, 6, 1) : 0;
 
-    const g = createSvgEl('g', {
-      transform: `translate(${ox}, ${oy}) rotate(${rot})`,
-    });
-
+    const g = createSvgEl('g', { transform: `translate(${ox}, ${oy}) rotate(${rot})` });
     if (arc >= 359.5) {
       if (outW > 0) {
         g.appendChild(
           createSvgEl('circle', {
             cx: 0,
             cy: 0,
-            r: r,
+            r,
             fill: 'none',
             stroke: c.outlineColor,
             'stroke-width': thick + outW * 2,
@@ -629,7 +507,7 @@
         createSvgEl('circle', {
           cx: 0,
           cy: 0,
-          r: r,
+          r,
           fill: 'none',
           stroke: c.color,
           'stroke-width': thick,
@@ -661,7 +539,6 @@
         })
       );
     }
-
     parentG.appendChild(g);
   }
 
@@ -669,23 +546,17 @@
     if (!ly || !ly.enabled) return;
     const len = clamp(ly.size, 2, 60, 8);
     const thick = clamp(ly.thickness, 1, 16, 2);
-    const spreadDeg = clamp(ly.angle, 20, 160, 75);
-    const rot = clamp(ly.rotation, 0, 360, 0);
-    const ox = clamp(ly.offsetX, -120, 120, 0);
-    const oy = clamp(ly.offsetY, -120, 120, 0);
+    const halfRad = ((clamp(ly.angle, 20, 160, 75) / 2) * Math.PI) / 180;
+    const dx = Math.sin(halfRad) * len;
+    const dy = Math.cos(halfRad) * len;
+    const dPath = `M ${(-dx).toFixed(2)} ${dy.toFixed(2)} L 0 0 L ${dx.toFixed(2)} ${dy.toFixed(2)}`;
     const mainOp = clamp(ly.opacity, 0, 100, 100) / 100;
     const outOp = clamp(ly.outlineOpacity, 0, 100, 80) / 100;
     const outW = ly.outline ? clamp(ly.outlineWidth, 1, 6, 1) : 0;
 
-    const halfRad = ((spreadDeg / 2) * Math.PI) / 180;
-    const dx = Math.sin(halfRad) * len;
-    const dy = Math.cos(halfRad) * len;
-    const dPath = `M ${(-dx).toFixed(2)} ${dy.toFixed(2)} L 0 0 L ${dx.toFixed(2)} ${dy.toFixed(2)}`;
-
     const g = createSvgEl('g', {
-      transform: `translate(${ox}, ${oy}) rotate(${rot})`,
+      transform: `translate(${clamp(ly.offsetX, -120, 120, 0)}, ${clamp(ly.offsetY, -120, 120, 0)}) rotate(${clamp(ly.rotation, 0, 360, 0)})`,
     });
-
     if (outW > 0) {
       g.appendChild(
         createSvgEl('path', {
@@ -710,7 +581,6 @@
         'stroke-linejoin': 'miter',
       })
     );
-
     parentG.appendChild(g);
   }
 
@@ -718,17 +588,13 @@
     if (!ly || !ly.enabled) return;
     const len = clamp(ly.size, 1, 80, 8);
     const thick = clamp(ly.thickness, 1, 20, 2);
-    const rot = clamp(ly.rotation, 0, 360, 0);
-    const ox = clamp(ly.offsetX, -120, 120, 0);
-    const oy = clamp(ly.offsetY, -120, 120, 0);
     const mainOp = clamp(ly.opacity, 0, 100, 100) / 100;
     const outOp = clamp(ly.outlineOpacity, 0, 100, 80) / 100;
     const outW = ly.outline ? clamp(ly.outlineWidth, 1, 6, 1) : 0;
 
     const g = createSvgEl('g', {
-      transform: `translate(${ox}, ${oy}) rotate(${rot})`,
+      transform: `translate(${clamp(ly.offsetX, -120, 120, 0)}, ${clamp(ly.offsetY, -120, 120, 0)}) rotate(${clamp(ly.rotation, 0, 360, 0)})`,
     });
-
     const x = -len / 2;
     const y = -thick / 2;
     if (outW > 0) {
@@ -744,46 +610,25 @@
       );
     }
     g.appendChild(
-      createSvgEl('rect', {
-        x: x,
-        y: y,
-        width: len,
-        height: thick,
-        fill: ly.color,
-        'fill-opacity': mainOp,
-      })
+      createSvgEl('rect', { x, y, width: len, height: thick, fill: ly.color, 'fill-opacity': mainOp })
     );
-
     parentG.appendChild(g);
   }
 
   function renderReticleToSvg(svgEl, model) {
     if (!svgEl || !model) return;
-    while (svgEl.firstChild) {
-      svgEl.removeChild(svgEl.firstChild);
-    }
-
-    const scale = clamp(model.globalScale, 50, 200, 100) / 100;
-    const gOp = clamp(model.globalOpacity, 10, 100, 100) / 100;
+    svgEl.textContent = '';
 
     const rootG = createSvgEl('g', {
-      transform: `scale(${scale})`,
-      opacity: gOp,
+      transform: `scale(${clamp(model.globalScale, 50, 200, 100) / 100})`,
+      opacity: clamp(model.globalOpacity, 10, 100, 100) / 100,
     });
 
-    // 1. Circle slot (bottom layer of standard slots)
     renderCircleGroup(rootG, model.circle, 0, 0);
-
-    // 2. Outer Lines
     renderCrossGroup(rootG, model.outer, 0, 0);
-
-    // 3. Inner Lines
     renderCrossGroup(rootG, model.inner, 0, 0);
-
-    // 4. Center Dot
     renderDotGroup(rootG, model.dot, 0, 0, 0);
 
-    // 5. Custom Layers (in order)
     if (Array.isArray(model.layers)) {
       model.layers.forEach((ly) => {
         if (!ly || !ly.enabled) return;
@@ -791,32 +636,21 @@
         if (shape === 'cross' || shape === 'tcross') {
           renderCrossGroup(
             rootG,
-            {
-              ...ly,
-              length: ly.size,
-              tStyle: shape === 'tcross',
-            },
+            { ...ly, length: ly.size, tStyle: shape === 'tcross' },
             ly.offsetX || 0,
             ly.offsetY || 0
           );
         } else if (shape === 'circle') {
           renderCircleGroup(
             rootG,
-            {
-              ...ly,
-              radius: ly.size,
-              arc: ly.angle || 360,
-            },
+            { ...ly, radius: ly.size, arc: ly.angle || 360 },
             ly.offsetX || 0,
             ly.offsetY || 0
           );
         } else if (shape === 'dot') {
           renderDotGroup(
             rootG,
-            {
-              ...ly,
-              shape: 'c',
-            },
+            { ...ly, shape: 'c' },
             ly.offsetX || 0,
             ly.offsetY || 0,
             ly.rotation || 0
@@ -828,35 +662,34 @@
         }
       });
     }
-
     svgEl.appendChild(rootG);
   }
 
   function refreshAllReticleCanvases() {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
     const code = encodeReticleToRT1(reticleModel);
     profileState.activeCode = code;
 
     renderReticleToSvg(hudSvg, reticleModel);
-    renderReticleToSvg(previewSvg, reticleModel);
+    if (isOpen) renderReticleToSvg(previewSvg, reticleModel);
 
-    if (inputShareCode && document.activeElement !== inputShareCode) {
-      inputShareCode.value = code;
-    }
-    if (footerLiveCode) {
-      footerLiveCode.value = code;
-    }
-    if (inputGlobalScale) {
-      inputGlobalScale.value = String(reticleModel.globalScale || 100);
-    }
-    if (valGlobalScale) {
-      valGlobalScale.textContent = `${reticleModel.globalScale || 100}%`;
-    }
-    if (inputGlobalOpacity) {
-      inputGlobalOpacity.value = String(reticleModel.globalOpacity || 100);
-    }
-    if (valGlobalOpacity) {
-      valGlobalOpacity.textContent = `${reticleModel.globalOpacity || 100}%`;
-    }
+    if (inputShareCode && document.activeElement !== inputShareCode) inputShareCode.value = code;
+    if (footerLiveCode) footerLiveCode.value = code;
+    if (inputGlobalScale) inputGlobalScale.value = String(reticleModel.globalScale || 100);
+    if (valGlobalScale) valGlobalScale.textContent = `${reticleModel.globalScale || 100}%`;
+    if (inputGlobalOpacity) inputGlobalOpacity.value = String(reticleModel.globalOpacity || 100);
+    if (valGlobalOpacity) valGlobalOpacity.textContent = `${reticleModel.globalOpacity || 100}%`;
+  }
+
+  function scheduleReticleRefresh() {
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = 0;
+      refreshAllReticleCanvases();
+    });
   }
 
   // ==========================================================================
@@ -866,9 +699,9 @@
   function t(key, subs) {
     let str = currentLocales[key] !== undefined ? String(currentLocales[key]) : key;
     if (subs && typeof subs === 'object') {
-      Object.entries(subs).forEach(([k, v]) => {
-        str = str.replace(new RegExp(`%\\{${k}\\}`, 'g'), String(v));
-      });
+      for (const k in subs) {
+        str = str.replace(new RegExp(`%\\{${k}\\}`, 'g'), String(subs[k]));
+      }
     }
     return str;
   }
@@ -883,8 +716,7 @@
 
     if (theme.position && appEl) {
       appEl.classList.remove('pos-left', 'pos-right', 'pos-center');
-      const pos = String(theme.position).toLowerCase();
-      appEl.classList.add(pos === 'left' ? 'pos-left' : 'pos-right');
+      appEl.classList.add(String(theme.position).toLowerCase() === 'left' ? 'pos-left' : 'pos-right');
     }
   }
 
@@ -894,16 +726,13 @@
 
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       const key = el.getAttribute('data-i18n');
-      if (key && currentLocales[key] !== undefined) {
-        el.textContent = String(currentLocales[key]);
-      }
+      if (key && currentLocales[key] !== undefined) el.textContent = String(currentLocales[key]);
     });
 
     document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
       const key = el.getAttribute('data-i18n-placeholder');
-      if (key && currentLocales[key] !== undefined) {
+      if (key && currentLocales[key] !== undefined)
         el.setAttribute('placeholder', String(currentLocales[key]));
-      }
     });
   }
 
@@ -913,13 +742,11 @@
     feedbackBanner.textContent = message;
     feedbackBanner.classList.toggle('error', Boolean(isError));
     feedbackBanner.classList.remove('hidden');
-    feedbackTimer = setTimeout(() => {
-      feedbackBanner.classList.add('hidden');
-    }, 3200);
+    feedbackTimer = setTimeout(() => feedbackBanner.classList.add('hidden'), 3200);
   }
 
   // ==========================================================================
-  // 5. Dynamic UI Builders (Standard Slots, Custom Layers, Display Modes, Presets)
+  // 5. Dynamic UI Builders
   // ==========================================================================
 
   function createSliderControl(labelKey, min, max, step, value, onInput) {
@@ -933,8 +760,7 @@
     const valSpan = document.createElement('span');
     valSpan.className = 'val-num';
     valSpan.textContent = String(value);
-    label.appendChild(textSpan);
-    label.appendChild(valSpan);
+    label.append(textSpan, valSpan);
 
     const input = document.createElement('input');
     input.type = 'range';
@@ -947,11 +773,10 @@
       const numVal = Number(input.value);
       valSpan.textContent = String(numVal);
       onInput(numVal);
-      refreshAllReticleCanvases();
+      scheduleReticleRefresh();
     });
 
-    wrap.appendChild(label);
-    wrap.appendChild(input);
+    wrap.append(label, input);
     return wrap;
   }
 
@@ -978,13 +803,11 @@
       const clean = sanitizeHex(colorInput.value);
       hexBadge.textContent = clean.toUpperCase();
       onInput(clean);
-      refreshAllReticleCanvases();
+      scheduleReticleRefresh();
     });
 
-    pickerRow.appendChild(colorInput);
-    pickerRow.appendChild(hexBadge);
-    wrap.appendChild(label);
-    wrap.appendChild(pickerRow);
+    pickerRow.append(colorInput, hexBadge);
+    wrap.append(label, pickerRow);
     return wrap;
   }
 
@@ -1008,11 +831,10 @@
 
     select.addEventListener('change', () => {
       onChange(select.value);
-      refreshAllReticleCanvases();
+      scheduleReticleRefresh();
     });
 
-    wrap.appendChild(label);
-    wrap.appendChild(select);
+    wrap.append(label, select);
     return wrap;
   }
 
@@ -1024,12 +846,11 @@
     chk.checked = Boolean(checked);
     chk.addEventListener('change', () => {
       onChange(chk.checked);
-      refreshAllReticleCanvases();
+      scheduleReticleRefresh();
     });
     const span = document.createElement('span');
     span.textContent = t(labelKey);
-    lbl.appendChild(chk);
-    lbl.appendChild(span);
+    lbl.append(chk, span);
     return lbl;
   }
 
@@ -1044,172 +865,22 @@
         slotObj.outline = v;
       })
     );
-    box.appendChild(checks);
 
     const grid = document.createElement('div');
     grid.className = 'control-grid-2';
-    grid.appendChild(
+    grid.append(
       createColorControl('param_outline_color', slotObj.outlineColor, (v) => {
         slotObj.outlineColor = v;
-      })
-    );
-    grid.appendChild(
+      }),
       createSliderControl('param_outline_width', 1, 6, 1, slotObj.outlineWidth, (v) => {
         slotObj.outlineWidth = v;
-      })
-    );
-    grid.appendChild(
+      }),
       createSliderControl('param_outline_opacity', 0, 100, 5, slotObj.outlineOpacity, (v) => {
         slotObj.outlineOpacity = v;
       })
     );
-    box.appendChild(grid);
-
+    box.append(checks, grid);
     return box;
-  }
-
-  function renderStandardSlotsUI() {
-    if (!standardSlotsContainer) return;
-    standardSlotsContainer.innerHTML = '';
-
-    // 1. Center Dot
-    standardSlotsContainer.appendChild(
-      buildStandardSlotCard('slot_dot', reticleModel.dot, (body, d) => {
-        const g1 = document.createElement('div');
-        g1.className = 'control-grid-2';
-        g1.appendChild(
-          createSelectControl(
-            'param_shape',
-            [
-              { value: 'c', label: t('shape_circle') },
-              { value: 's', label: t('shape_square') },
-              { value: 'd', label: t('shape_diamond') },
-              { value: 'r', label: t('shape_ring') },
-            ],
-            d.shape,
-            (v) => {
-              d.shape = v;
-            }
-          )
-        );
-        g1.appendChild(
-          createSliderControl('param_size', 1, 24, 1, d.size, (v) => {
-            d.size = v;
-          })
-        );
-        g1.appendChild(
-          createColorControl('param_color', d.color, (v) => {
-            d.color = v;
-          })
-        );
-        g1.appendChild(
-          createSliderControl('param_opacity', 5, 100, 5, d.opacity, (v) => {
-            d.opacity = v;
-          })
-        );
-        body.appendChild(g1);
-        body.appendChild(buildOutlineControls(d));
-      })
-    );
-
-    // 2. Inner Lines & 3. Outer Lines
-    const buildCrossBody = (body, s) => {
-      const checks = document.createElement('div');
-      checks.className = 'inline-checks';
-      checks.appendChild(
-        createCheckboxPill('param_t_style', s.tStyle, (v) => {
-          s.tStyle = v;
-        })
-      );
-      checks.appendChild(
-        createCheckboxPill('param_round_caps', s.roundCaps, (v) => {
-          s.roundCaps = v;
-        })
-      );
-      body.appendChild(checks);
-
-      const g1 = document.createElement('div');
-      g1.className = 'control-grid-2';
-      g1.appendChild(
-        createSliderControl('param_length', 1, 50, 1, s.length, (v) => {
-          s.length = v;
-        })
-      );
-      g1.appendChild(
-        createSliderControl('param_thickness', 1, 16, 1, s.thickness, (v) => {
-          s.thickness = v;
-        })
-      );
-      g1.appendChild(
-        createSliderControl('param_gap', -15, 50, 1, s.gap, (v) => {
-          s.gap = v;
-        })
-      );
-      g1.appendChild(
-        createSliderControl('param_rotation', 0, 360, 5, s.rotation, (v) => {
-          s.rotation = v;
-        })
-      );
-      g1.appendChild(
-        createColorControl('param_color', s.color, (v) => {
-          s.color = v;
-        })
-      );
-      g1.appendChild(
-        createSliderControl('param_opacity', 5, 100, 5, s.opacity, (v) => {
-          s.opacity = v;
-        })
-      );
-      body.appendChild(g1);
-      body.appendChild(buildOutlineControls(s));
-    };
-
-    standardSlotsContainer.appendChild(
-      buildStandardSlotCard('slot_inner', reticleModel.inner, buildCrossBody)
-    );
-    standardSlotsContainer.appendChild(
-      buildStandardSlotCard('slot_outer', reticleModel.outer, buildCrossBody)
-    );
-
-    // 4. Circle / Ring
-    standardSlotsContainer.appendChild(
-      buildStandardSlotCard('slot_circle', reticleModel.circle, (body, c) => {
-        const g1 = document.createElement('div');
-        g1.className = 'control-grid-2';
-        g1.appendChild(
-          createSliderControl('param_radius', 2, 80, 1, c.radius, (v) => {
-            c.radius = v;
-          })
-        );
-        g1.appendChild(
-          createSliderControl('param_thickness', 1, 16, 1, c.thickness, (v) => {
-            c.thickness = v;
-          })
-        );
-        g1.appendChild(
-          createSliderControl('param_arc', 30, 360, 15, c.arc, (v) => {
-            c.arc = v;
-          })
-        );
-        g1.appendChild(
-          createSliderControl('param_rotation', 0, 360, 5, c.rotation, (v) => {
-            c.rotation = v;
-          })
-        );
-        g1.appendChild(
-          createColorControl('param_color', c.color, (v) => {
-            c.color = v;
-          })
-        );
-        g1.appendChild(
-          createSliderControl('param_opacity', 5, 100, 5, c.opacity, (v) => {
-            c.opacity = v;
-          })
-        );
-        body.appendChild(g1);
-        body.appendChild(buildOutlineControls(c));
-      })
-    );
   }
 
   function buildStandardSlotCard(titleKey, slotObj, populateBodyFn) {
@@ -1227,42 +898,113 @@
     const title = document.createElement('span');
     title.className = 'slot-title';
     title.textContent = t(titleKey);
-    titleGroup.appendChild(dot);
-    titleGroup.appendChild(title);
+    titleGroup.append(dot, title);
 
     const rightControls = document.createElement('div');
     rightControls.className = 'slot-controls-right';
-    const enablePill = createCheckboxPill('param_enabled', slotObj.enabled, (checked) => {
-      slotObj.enabled = checked;
-      card.classList.toggle('disabled-slot', !checked);
-    });
-    rightControls.appendChild(enablePill);
+    rightControls.appendChild(
+      createCheckboxPill('param_enabled', slotObj.enabled, (checked) => {
+        slotObj.enabled = checked;
+        card.classList.toggle('disabled-slot', !checked);
+      })
+    );
 
-    header.appendChild(titleGroup);
-    header.appendChild(rightControls);
-    card.appendChild(header);
-
+    header.append(titleGroup, rightControls);
     const body = document.createElement('div');
     body.className = 'slot-body';
-    populateBodyFn(body, slotObj);
-    card.appendChild(body);
-
+    populateBodyFn(body, slotObj, dot);
+    card.append(header, body);
     return card;
+  }
+
+  function renderStandardSlotsUI() {
+    if (!standardSlotsContainer) return;
+    standardSlotsContainer.textContent = '';
+
+    // 1. Center Dot
+    standardSlotsContainer.appendChild(
+      buildStandardSlotCard('slot_dot', reticleModel.dot, (body, d, dotEl) => {
+        const g1 = document.createElement('div');
+        g1.className = 'control-grid-2';
+        g1.append(
+          createSelectControl(
+            'param_shape',
+            [
+              { value: 'c', label: t('shape_circle') },
+              { value: 's', label: t('shape_square') },
+              { value: 'd', label: t('shape_diamond') },
+              { value: 'r', label: t('shape_ring') },
+            ],
+            d.shape,
+            (v) => (d.shape = v)
+          ),
+          createSliderControl('param_size', 1, 24, 1, d.size, (v) => (d.size = v)),
+          createColorControl('param_color', d.color, (v) => {
+            d.color = v;
+            dotEl.style.background = v;
+          }),
+          createSliderControl('param_opacity', 5, 100, 5, d.opacity, (v) => (d.opacity = v))
+        );
+        body.append(g1, buildOutlineControls(d));
+      })
+    );
+
+    // 2. Inner Lines & 3. Outer Lines
+    const buildCrossBody = (body, s, dotEl) => {
+      const checks = document.createElement('div');
+      checks.className = 'inline-checks';
+      checks.append(
+        createCheckboxPill('param_t_style', s.tStyle, (v) => (s.tStyle = v)),
+        createCheckboxPill('param_round_caps', s.roundCaps, (v) => (s.roundCaps = v))
+      );
+
+      const g1 = document.createElement('div');
+      g1.className = 'control-grid-2';
+      g1.append(
+        createSliderControl('param_length', 1, 50, 1, s.length, (v) => (s.length = v)),
+        createSliderControl('param_thickness', 1, 16, 1, s.thickness, (v) => (s.thickness = v)),
+        createSliderControl('param_gap', -15, 50, 1, s.gap, (v) => (s.gap = v)),
+        createSliderControl('param_rotation', 0, 360, 5, s.rotation, (v) => (s.rotation = v)),
+        createColorControl('param_color', s.color, (v) => {
+          s.color = v;
+          dotEl.style.background = v;
+        }),
+        createSliderControl('param_opacity', 5, 100, 5, s.opacity, (v) => (s.opacity = v))
+      );
+      body.append(checks, g1, buildOutlineControls(s));
+    };
+
+    standardSlotsContainer.append(
+      buildStandardSlotCard('slot_inner', reticleModel.inner, buildCrossBody),
+      buildStandardSlotCard('slot_outer', reticleModel.outer, buildCrossBody),
+      buildStandardSlotCard('slot_circle', reticleModel.circle, (body, c, dotEl) => {
+        const g1 = document.createElement('div');
+        g1.className = 'control-grid-2';
+        g1.append(
+          createSliderControl('param_radius', 2, 80, 1, c.radius, (v) => (c.radius = v)),
+          createSliderControl('param_thickness', 1, 16, 1, c.thickness, (v) => (c.thickness = v)),
+          createSliderControl('param_arc', 30, 360, 15, c.arc, (v) => (c.arc = v)),
+          createSliderControl('param_rotation', 0, 360, 5, c.rotation, (v) => (c.rotation = v)),
+          createColorControl('param_color', c.color, (v) => {
+            c.color = v;
+            dotEl.style.background = v;
+          }),
+          createSliderControl('param_opacity', 5, 100, 5, c.opacity, (v) => (c.opacity = v))
+        );
+        body.append(g1, buildOutlineControls(c));
+      })
+    );
   }
 
   function renderCustomLayersUI() {
     if (!customLayersContainer) return;
-    customLayersContainer.innerHTML = '';
+    customLayersContainer.textContent = '';
 
     const layers = reticleModel.layers || [];
     const maxL = serverConfig.maxCustomLayers || 6;
 
-    if (tabLayerCount) {
-      tabLayerCount.textContent = `${layers.length}/${maxL}`;
-    }
-    if (btnAddLayer) {
-      btnAddLayer.disabled = layers.length >= maxL;
-    }
+    if (tabLayerCount) tabLayerCount.textContent = `${layers.length}/${maxL}`;
+    if (btnAddLayer) btnAddLayer.disabled = layers.length >= maxL;
 
     if (layers.length === 0) {
       const hint = document.createElement('div');
@@ -1287,12 +1029,10 @@
       const title = document.createElement('span');
       title.className = 'slot-title';
       title.textContent = t('layer_item_title', { index: idx + 1 });
-      titleGroup.appendChild(dot);
-      titleGroup.appendChild(title);
+      titleGroup.append(dot, title);
 
       const rightControls = document.createElement('div');
       rightControls.className = 'slot-controls-right';
-
       rightControls.appendChild(
         createCheckboxPill('param_enabled', ly.enabled, (checked) => {
           ly.enabled = checked;
@@ -1324,17 +1064,14 @@
       });
       rightControls.appendChild(btnDel);
 
-      header.appendChild(titleGroup);
-      header.appendChild(rightControls);
-      card.appendChild(header);
+      header.append(titleGroup, rightControls);
 
       const body = document.createElement('div');
       body.className = 'slot-body';
-
       const g1 = document.createElement('div');
       g1.className = 'control-grid-2';
 
-      g1.appendChild(
+      g1.append(
         createSelectControl(
           'param_shape',
           [
@@ -1350,31 +1087,18 @@
             ly.shape = v;
             renderCustomLayersUI();
           }
-        )
-      );
-
-      g1.appendChild(
-        createSliderControl('param_size', 1, 60, 1, ly.size, (v) => {
-          ly.size = v;
-        })
+        ),
+        createSliderControl('param_size', 1, 60, 1, ly.size, (v) => (ly.size = v))
       );
 
       if (ly.shape !== 'dot') {
         g1.appendChild(
-          createSliderControl('param_thickness', 1, 16, 1, ly.thickness, (v) => {
-            ly.thickness = v;
-          })
+          createSliderControl('param_thickness', 1, 16, 1, ly.thickness, (v) => (ly.thickness = v))
         );
       }
-
       if (ly.shape === 'cross' || ly.shape === 'tcross') {
-        g1.appendChild(
-          createSliderControl('param_gap', -15, 50, 1, ly.gap, (v) => {
-            ly.gap = v;
-          })
-        );
+        g1.appendChild(createSliderControl('param_gap', -15, 50, 1, ly.gap, (v) => (ly.gap = v)));
       }
-
       if (ly.shape === 'chevron' || ly.shape === 'circle') {
         g1.appendChild(
           createSliderControl(
@@ -1383,55 +1107,36 @@
             360,
             5,
             ly.angle,
-            (v) => {
-              ly.angle = v;
-            }
+            (v) => (ly.angle = v)
           )
         );
       }
 
-      g1.appendChild(
-        createSliderControl('param_rotation', 0, 360, 5, ly.rotation, (v) => {
-          ly.rotation = v;
-        })
-      );
-      g1.appendChild(
-        createSliderControl('param_offset_x', -100, 100, 1, ly.offsetX, (v) => {
-          ly.offsetX = v;
-        })
-      );
-      g1.appendChild(
-        createSliderControl('param_offset_y', -100, 100, 1, ly.offsetY, (v) => {
-          ly.offsetY = v;
-        })
-      );
-      g1.appendChild(
+      g1.append(
+        createSliderControl('param_rotation', 0, 360, 5, ly.rotation, (v) => (ly.rotation = v)),
+        createSliderControl('param_offset_x', -100, 100, 1, ly.offsetX, (v) => (ly.offsetX = v)),
+        createSliderControl('param_offset_y', -100, 100, 1, ly.offsetY, (v) => (ly.offsetY = v)),
         createColorControl('param_color', ly.color, (v) => {
           ly.color = v;
           dot.style.background = v;
-        })
-      );
-      g1.appendChild(
-        createSliderControl('param_opacity', 5, 100, 5, ly.opacity, (v) => {
-          ly.opacity = v;
-        })
+        }),
+        createSliderControl('param_opacity', 5, 100, 5, ly.opacity, (v) => (ly.opacity = v))
       );
 
-      body.appendChild(g1);
-      body.appendChild(buildOutlineControls(ly));
-      card.appendChild(body);
+      body.append(g1, buildOutlineControls(ly));
+      card.append(header, body);
       customLayersContainer.appendChild(card);
     });
   }
 
   function renderDisplayModesUI() {
     if (!displayModesList) return;
-    displayModesList.innerHTML = '';
+    displayModesList.textContent = '';
 
     const allowed = serverConfig.allowedDisplayModes || {
       aim_only: true,
       armed: true,
-      always: true,
+      always: false,
       off: true,
     };
 
@@ -1455,8 +1160,7 @@
       h3.textContent = t(m.titleKey);
       const p = document.createElement('p');
       p.textContent = t(m.descKey);
-      info.appendChild(h3);
-      info.appendChild(p);
+      info.append(h3, p);
       card.appendChild(info);
 
       if (!isAllowed) {
@@ -1471,16 +1175,11 @@
           saveToLua(false);
         });
       }
-
       displayModesList.appendChild(card);
     });
 
-    if (optHideOnScope) {
-      optHideOnScope.checked = profileState.hideOnScope !== false;
-    }
-    if (optShowInFp) {
-      optShowInFp.checked = profileState.showInFirstPerson !== false;
-    }
+    if (optHideOnScope) optHideOnScope.checked = profileState.hideOnScope !== false;
+    if (optShowInFp) optShowInFp.checked = profileState.showInFirstPerson !== false;
   }
 
   function createMiniPresetRow(preset, isBuiltIn) {
@@ -1492,23 +1191,15 @@
 
     const thumb = document.createElement('div');
     thumb.className = 'preset-thumb';
-    const miniSvg = createSvgEl('svg', {
-      width: 34,
-      height: 34,
-      viewBox: '-30 -30 60 60',
-    });
+    const miniSvg = createSvgEl('svg', { width: 34, height: 34, viewBox: '-30 -30 60 60' });
     const decoded = decodeRT1ToReticle(preset.code);
-    if (decoded.ok) {
-      renderReticleToSvg(miniSvg, decoded.data);
-    }
+    if (decoded.ok) renderReticleToSvg(miniSvg, decoded.data);
     thumb.appendChild(miniSvg);
 
     const nameEl = document.createElement('span');
     nameEl.className = 'preset-name';
     nameEl.textContent = preset.name || 'Preset';
-
-    left.appendChild(thumb);
-    left.appendChild(nameEl);
+    left.append(thumb, nameEl);
 
     const actions = document.createElement('div');
     actions.className = 'preset-actions';
@@ -1517,20 +1208,15 @@
     btnLoad.type = 'button';
     btnLoad.className = 'btn btn-primary btn-sm';
     btnLoad.textContent = t('btn_load');
-    btnLoad.addEventListener('click', () => {
-      loadReticleFromShareCode(preset.code, true);
-    });
+    btnLoad.addEventListener('click', () => loadReticleFromShareCode(preset.code, true));
 
     const btnCopy = document.createElement('button');
     btnCopy.type = 'button';
     btnCopy.className = 'btn btn-secondary btn-sm';
     btnCopy.textContent = t('btn_copy');
-    btnCopy.addEventListener('click', () => {
-      copyTextToClipboard(preset.code);
-    });
+    btnCopy.addEventListener('click', () => copyTextToClipboard(preset.code));
 
-    actions.appendChild(btnLoad);
-    actions.appendChild(btnCopy);
+    actions.append(btnLoad, btnCopy);
 
     if (!isBuiltIn) {
       const btnDel = document.createElement('button');
@@ -1546,8 +1232,7 @@
       actions.appendChild(btnDel);
     }
 
-    row.appendChild(left);
-    row.appendChild(actions);
+    row.append(left, actions);
     return row;
   }
 
@@ -1555,35 +1240,26 @@
     const myPresets = Array.isArray(profileState.presets) ? profileState.presets : [];
     const maxP = serverConfig.maxPlayerPresets || 20;
 
-    if (presetCounterBadge) {
-      presetCounterBadge.textContent = `${myPresets.length} / ${maxP}`;
-    }
-    if (myPresetsCountLabel) {
-      myPresetsCountLabel.textContent = `${myPresets.length} / ${maxP}`;
-    }
+    if (presetCounterBadge) presetCounterBadge.textContent = `${myPresets.length} / ${maxP}`;
+    if (myPresetsCountLabel) myPresetsCountLabel.textContent = `${myPresets.length} / ${maxP}`;
 
     if (myPresetsList) {
-      myPresetsList.innerHTML = '';
+      myPresetsList.textContent = '';
       if (myPresets.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'empty-hint';
         empty.textContent = t('preset_empty_hint');
         myPresetsList.appendChild(empty);
       } else {
-        myPresets.forEach((p) => {
-          myPresetsList.appendChild(createMiniPresetRow(p, false));
-        });
+        myPresets.forEach((p) => myPresetsList.appendChild(createMiniPresetRow(p, false)));
       }
     }
 
     if (builtinPresetsList) {
-      builtinPresetsList.innerHTML = '';
-      const builtIns = Array.isArray(serverConfig.builtInPresets)
-        ? serverConfig.builtInPresets
-        : [];
-      builtIns.forEach((p) => {
-        builtinPresetsList.appendChild(createMiniPresetRow(p, true));
-      });
+      builtinPresetsList.textContent = '';
+      (serverConfig.builtInPresets || []).forEach((p) =>
+        builtinPresetsList.appendChild(createMiniPresetRow(p, true))
+      );
     }
   }
 
@@ -1600,22 +1276,20 @@
   // ==========================================================================
 
   function getResourceName() {
-    if (typeof window.GetParentResourceName === 'function') {
-      return window.GetParentResourceName();
-    }
-    return 'wu-reticle';
+    return typeof window.GetParentResourceName === 'function'
+      ? window.GetParentResourceName()
+      : 'wu-reticle';
   }
 
   async function postNUI(endpoint, payload = {}) {
-    const url = `https://${getResourceName()}/${endpoint}`;
     try {
-      const response = await fetch(url, {
+      const response = await fetch(`https://${getResourceName()}/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=UTF-8' },
         body: JSON.stringify(payload),
       });
       return await response.json();
-    } catch (err) {
+    } catch (_) {
       return { ok: false, offline: true };
     }
   }
@@ -1628,33 +1302,11 @@
       hideOnScope: profileState.hideOnScope,
       showInFirstPerson: profileState.showInFirstPerson,
       presets: profileState.presets,
-      syncServer: syncServer,
+      syncServer,
       notify: Boolean(notifyMessage),
-      notifyMessage: notifyMessage,
-      notifyType: notifyType,
+      notifyMessage,
+      notifyType,
     });
-  }
-
-  function copyTextToClipboard(text) {
-    const clean = String(text || '').trim();
-    if (!clean) return;
-
-    const finishCopy = () => {
-      showFeedback(t('msg_code_copied'), false);
-    };
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard
-        .writeText(clean)
-        .then(finishCopy)
-        .catch(() => {
-          fallbackCopy(clean);
-          finishCopy();
-        });
-    } else {
-      fallbackCopy(clean);
-      finishCopy();
-    }
   }
 
   function fallbackCopy(text) {
@@ -1664,8 +1316,25 @@
     clipboardHelper.select();
     try {
       document.execCommand('copy');
-    } catch (_) {
-      // ignore
+    } catch (_) {}
+  }
+
+  function copyTextToClipboard(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    const done = () => showFeedback(t('msg_code_copied'), false);
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(clean)
+        .then(done)
+        .catch(() => {
+          fallbackCopy(clean);
+          done();
+        });
+    } else {
+      fallbackCopy(clean);
+      done();
     }
   }
 
@@ -1675,14 +1344,10 @@
       showFeedback(t('msg_invalid_code'), true);
       return false;
     }
-
     reticleModel = res.data;
     rebuildAllEditorControls();
     saveToLua(true);
-
-    if (showToast) {
-      showFeedback(t('msg_code_imported'), false);
-    }
+    if (showToast) showFeedback(t('msg_code_imported'), false);
     return true;
   }
 
@@ -1699,16 +1364,14 @@
     if (payload.profile && typeof payload.profile === 'object') {
       profileState = { ...profileState, ...payload.profile };
       const parsed = decodeRT1ToReticle(profileState.activeCode);
-      if (parsed.ok && parsed.data) {
-        reticleModel = parsed.data;
-      }
+      if (parsed.ok && parsed.data) reticleModel = parsed.data;
     }
     rebuildAllEditorControls();
   }
 
   function openEditor(payload = {}) {
-    syncStateFromPayload(payload);
     isOpen = true;
+    syncStateFromPayload(payload);
     appEl.classList.remove('hidden');
     hudContainer.classList.remove('hud-hidden');
     if (centerGuide) centerGuide.classList.remove('hidden');
@@ -1719,52 +1382,44 @@
     isOpen = false;
     appEl.classList.add('hidden');
     if (centerGuide) centerGuide.classList.add('hidden');
-
     profileState.activeCode = encodeReticleToRT1(reticleModel);
-    if (notifyLua) {
-      await postNUI('close', { profile: profileState });
-    }
+    if (notifyLua) await postNUI('close', { profile: profileState });
   }
 
-  // Global Scale & Opacity Listeners
   if (inputGlobalScale) {
     inputGlobalScale.addEventListener('input', () => {
       reticleModel.globalScale = clamp(inputGlobalScale.value, 50, 200, 100);
-      refreshAllReticleCanvases();
+      scheduleReticleRefresh();
     });
   }
   if (inputGlobalOpacity) {
     inputGlobalOpacity.addEventListener('input', () => {
       reticleModel.globalOpacity = clamp(inputGlobalOpacity.value, 10, 100, 100);
-      refreshAllReticleCanvases();
+      scheduleReticleRefresh();
     });
   }
 
-  // Preview Background Switcher
   document.querySelectorAll('.bg-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.bg-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
-      const bg = btn.getAttribute('data-bg') || 'night';
       if (previewStage) {
-        previewStage.className = `preview-stage bg-${bg}`;
+        previewStage.className = `preview-stage bg-${btn.getAttribute('data-bg') || 'night'}`;
       }
     });
   });
 
-  // Tab Navigation
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const targetTab = btn.getAttribute('data-tab');
       document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach((p) => p.classList.remove('active'));
       btn.classList.add('active');
-      const pane = document.getElementById(`tab-pane-${targetTab}`);
+      const pane = $(`tab-pane-${targetTab}`);
       if (pane) pane.classList.add('active');
     });
   });
 
-  // Add Custom Layer
   if (btnAddLayer) {
     btnAddLayer.addEventListener('click', () => {
       const maxL = serverConfig.maxCustomLayers || 6;
@@ -1776,7 +1431,6 @@
     });
   }
 
-  // Display Options Toggles
   if (optHideOnScope) {
     optHideOnScope.addEventListener('change', () => {
       profileState.hideOnScope = optHideOnScope.checked;
@@ -1790,26 +1444,18 @@
     });
   }
 
-  // Share Code Copy & Import
   if (btnCopyCode) {
-    btnCopyCode.addEventListener('click', () => {
-      const code = encodeReticleToRT1(reticleModel);
-      copyTextToClipboard(code);
-    });
+    btnCopyCode.addEventListener('click', () => copyTextToClipboard(encodeReticleToRT1(reticleModel)));
   }
   if (footerLiveCode) {
-    footerLiveCode.addEventListener('click', () => {
-      copyTextToClipboard(footerLiveCode.value);
-    });
+    footerLiveCode.addEventListener('click', () => copyTextToClipboard(footerLiveCode.value));
   }
   if (btnImportCode) {
     btnImportCode.addEventListener('click', () => {
-      if (!inputShareCode) return;
-      loadReticleFromShareCode(inputShareCode.value, true);
+      if (inputShareCode) loadReticleFromShareCode(inputShareCode.value, true);
     });
   }
 
-  // Save New Personal Preset
   if (btnSavePreset) {
     btnSavePreset.addEventListener('click', () => {
       const maxP = serverConfig.maxPlayerPresets || 20;
@@ -1826,8 +1472,8 @@
 
       profileState.presets.unshift({
         id: `p_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        name: name,
-        code: code,
+        name,
+        code,
         updatedAt: Math.floor(Date.now() / 1000),
       });
 
@@ -1839,26 +1485,16 @@
     });
   }
 
-  // Reset to Default
   if (btnReset) {
     btnReset.addEventListener('click', () => {
-      const defaultCode =
-        serverConfig.defaultShareCode ||
-        'RT1:n=Default Cyan;d=1,c,3,00ffcc,100,1,1,000000,80;i=1,0,6,2,3,0,00ffcc,100,1,1,000000,80,0';
-      loadReticleFromShareCode(defaultCode, false);
+      loadReticleFromShareCode(serverConfig.defaultShareCode, false);
       showFeedback(t('msg_reset_done'), false);
     });
   }
 
-  // Close & Apply Buttons
-  if (btnClose) {
-    btnClose.addEventListener('click', () => closeEditor(true));
-  }
-  if (btnApplyClose) {
-    btnApplyClose.addEventListener('click', () => closeEditor(true));
-  }
+  if (btnClose) btnClose.addEventListener('click', () => closeEditor(true));
+  if (btnApplyClose) btnApplyClose.addEventListener('click', () => closeEditor(true));
 
-  // Escape Key Listener
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && isOpen) {
       event.preventDefault();
@@ -1866,13 +1502,11 @@
     }
   });
 
-  // FiveM SendNUIMessage Listener
   window.addEventListener('message', (event) => {
     const payload = event.data;
     if (!payload || typeof payload !== 'object') return;
 
-    const action = String(payload.action || '').toUpperCase();
-    switch (action) {
+    switch (String(payload.action || '').toUpperCase()) {
       case 'SYNC_PROFILE':
         syncStateFromPayload(payload);
         break;
@@ -1883,16 +1517,11 @@
         closeEditor(false);
         break;
       case 'SET_HUD_VISIBLE':
-        if (hudContainer) {
-          hudContainer.classList.toggle('hud-hidden', !payload.visible && !isOpen);
-        }
-        break;
-      default:
+        if (hudContainer) hudContainer.classList.toggle('hud-hidden', !payload.visible && !isOpen);
         break;
     }
   });
 
-  // Initial Boot
   rebuildAllEditorControls();
   postNUI('ready', {});
 })();

@@ -233,7 +233,7 @@ local function checkIsAiming(playerId, ped, isArmed)
     return false
 end
 
----現在のゲームプレイ状態からHUDレティクルを表示すべきか判定する
+---現在のゲームプレイ状態からHUDレティクルを表示すべきか判定する（非武装時は早期リターンでNative呼び出しを最小化）
 ---@param ped number
 ---@param weaponHash number
 ---@param isArmed boolean
@@ -250,7 +250,21 @@ local function evaluateShouldShowReticle(ped, weaponHash, isArmed, isAiming)
         return false
     end
 
-    -- ポーズメニュー（ESC）、画面フェードアウト、他リソースのNUI操作中は自動で隠す
+    -- 1. 表示モード別の一次判定（非武装・非エイム時はここで即リターンし、後続のNative呼び出しをすべてスキップ）
+    local visibleByMode = false
+    if mode == 'aim_only' then
+        visibleByMode = isAiming
+    elseif mode == 'armed' then
+        visibleByMode = isArmed or isAiming
+    elseif mode == 'always' then
+        visibleByMode = true
+    end
+
+    if not visibleByMode then
+        return false
+    end
+
+    -- 2. ポーズメニュー（ESC）、画面フェードアウト、他リソースのNUI操作中は自動で隠す
     if isTruthy(IsPauseMenuActive()) or isTruthy(IsScreenFadedOut()) or isTruthy(IsNuiFocused()) then
         return false
     end
@@ -259,7 +273,7 @@ local function evaluateShouldShowReticle(ped, weaponHash, isArmed, isAiming)
         return false
     end
 
-    -- 車両乗車中判定（運転席 / 同乗者席の個別Config制御・デフォルトは両方 false）
+    -- 3. 車両乗車中判定（運転席 / 同乗者席の個別Config制御・デフォルトは両方 false）
     local veh = GetVehiclePedIsIn(ped, false)
     if veh and veh ~= 0 then
         local isDriver = (GetPedInVehicleSeat(veh, -1) == ped)
@@ -274,7 +288,7 @@ local function evaluateShouldShowReticle(ped, weaponHash, isArmed, isAiming)
         end
     end
 
-    -- スナイパースコープ等のフルスクリーンスコープ覗き込み中
+    -- 4. スナイパースコープ等のフルスクリーンスコープ覗き込み中
     if clientProfile.hideOnScope and isTruthy(IsFirstPersonAimCamActive()) then
         local isSniper = weaponHash and (GetWeapontypeGroup(weaponHash) == `GROUP_SNIPER`)
         if GetFollowPedCamViewMode() ~= 4 or isSniper then
@@ -282,28 +296,13 @@ local function evaluateShouldShowReticle(ped, weaponHash, isArmed, isAiming)
         end
     end
 
-    -- 一人称視点（FPS）エイム時の表示設定チェック
+    -- 5. 一人称視点（FPS）エイム時の表示設定チェック
     if not clientProfile.showInFirstPerson and isAiming and GetFollowPedCamViewMode() == 4 then
         return false
     end
 
-    -- 表示モード別の判定
-    local visibleByMode = false
-    if mode == 'always' then
-        visibleByMode = true
-    elseif mode == 'armed' then
-        visibleByMode = isArmed or isAiming
-    elseif mode == 'aim_only' then
-        visibleByMode = isAiming
-    end
-
-    if not visibleByMode then
-        return false
-    end
-
     if Hooks and Hooks.ShouldShowReticle then
-        local hookAllowed = Hooks.ShouldShowReticle(ped, weaponHash, mode)
-        if not hookAllowed then
+        if not Hooks.ShouldShowReticle(ped, weaponHash, mode) then
             return false
         end
     end
@@ -456,25 +455,30 @@ CreateThread(function()
     local hideVanilla = (Config and Config.HideVanillaReticle ~= false)
 
     while true do
-        local ped = PlayerPedId()
-        local weaponHash = GetSelectedPedWeapon(ped)
-        local isArmed = checkIsArmed(ped, weaponHash)
-        local isAiming = checkIsAiming(playerId, ped, isArmed)
-
-        local shouldShow = evaluateShouldShowReticle(ped, weaponHash, isArmed, isAiming)
-        updateHudVisibility(shouldShow)
-
-        if isArmed or isAiming then
-            if hideVanilla then
-                -- 純正レティクル（HUD Component 14）を抑制
-                HideHudComponentThisFrame(14)
-                Wait(0)
-            else
-                Wait(30)
-            end
+        if not isEditorOpen and resolveAllowedDisplayMode(clientProfile.displayMode) == 'off' and not hideVanilla then
+            updateHudVisibility(false)
+            Wait(500)
         else
-            -- 非武装時は100msスリープでCPU負荷 0.00ms を維持
-            Wait(100)
+            local ped = PlayerPedId()
+            local weaponHash = GetSelectedPedWeapon(ped)
+            local isArmed = checkIsArmed(ped, weaponHash)
+            local isAiming = isArmed and checkIsAiming(playerId, ped, isArmed) or false
+
+            local shouldShow = evaluateShouldShowReticle(ped, weaponHash, isArmed, isAiming)
+            updateHudVisibility(shouldShow)
+
+            if isArmed or isAiming then
+                if hideVanilla then
+                    -- 純正レティクル（HUD Component 14）を抑制
+                    HideHudComponentThisFrame(14)
+                    Wait(0)
+                else
+                    Wait(30)
+                end
+            else
+                -- 非武装時は150msスリープでCPU負荷 0.00ms を維持
+                Wait(150)
+            end
         end
     end
 end)

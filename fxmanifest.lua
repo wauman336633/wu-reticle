@@ -6,7 +6,7 @@ use_experimental_fxv2_oal 'yes'
 name 'wu-reticle'
 author 'wu'
 description 'Custom Parametric & Multi-Layer Reticle Builder with Share Codes'
-version '1.0.0'
+version '1.1.0'
 
 -- 注意: 特定リソース未導入環境での起動クラッシュを防ぐため、
 -- '@qb-core/...', '@ox_lib/...', '@oxmysql/...' 等の外部ファイル参照は一切記述しないこと。
