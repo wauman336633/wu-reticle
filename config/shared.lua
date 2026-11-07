@@ -68,8 +68,11 @@ Config.DefaultHideOnScope = true
 -- 一人称視点（FPS視点）で銃を構えた際にもカスタムレティクルを表示するか（初期値）
 Config.DefaultShowInFirstPerson = true
 
--- 車両乗車中のドライブバイ（車内から銃を構えている時）にも表示するか
-Config.AllowVehicleDriveby = true
+-- 車両乗車中のレティクル表示制御（サーバー管理者設定・デフォルトは両方 false＝非表示）
+-- AllowDriverReticle    : 運転席（ドライバー）でのレティクル表示を許可するか
+-- AllowPassengerReticle : 助手席・後部座席（同乗者）でのレティクル表示を許可するか
+Config.AllowDriverReticle = false
+Config.AllowPassengerReticle = false
 
 -- ============================================================================
 -- 5. エディタ上限・初期プリセット設定

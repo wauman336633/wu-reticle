@@ -66,6 +66,10 @@ Config.AllowedDisplayModes = {
 
 -- GTA V 純正の標準レティクル（HUD Component 14）を自動的に非表示にするか
 Config.HideVanillaReticle = true
+
+-- 車両乗車中のレティクル表示制御（デフォルトは両方 false＝非表示）
+Config.AllowDriverReticle = false    -- 運転席（ドライバー）でのレティクル表示
+Config.AllowPassengerReticle = false -- 助手席・後部座席（同乗者）でのレティクル表示
 ```
 
 ---

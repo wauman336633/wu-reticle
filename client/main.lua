@@ -188,6 +188,12 @@ local function checkIsArmed(ped, weaponHash)
     if isTruthy(IsPedArmed(ped, 4)) or isTruthy(IsPedArmed(ped, 6)) then
         return true
     end
+    if isTruthy(IsPedInAnyVehicle(ped, false)) then
+        local hasVehWeap, vehWeap = GetCurrentPedVehicleWeapon(ped)
+        if isTruthy(hasVehWeap) and vehWeap and vehWeap ~= 0 and vehWeap ~= `WEAPON_UNARMED` then
+            return true
+        end
+    end
     if not weaponHash or weaponHash == 0 or weaponHash == `WEAPON_UNARMED` then
         return false
     end
@@ -207,14 +213,20 @@ local function checkIsAiming(playerId, ped, isArmed)
     if isTruthy(IsPlayerFreeAiming(playerId))
         or isTruthy(IsAimCamActive())
         or isTruthy(IsAimCamThirdPersonActive())
+        or isTruthy(IsPedDoingDriveby(ped))
     then
         return true
     end
 
-    -- 銃器装備中（または車内ドライブバイ可能時）にエイム入力（右クリック / INPUT_AIM: 25）を押している場合もカバー
-    if isArmed or IsPedInAnyVehicle(ped, false) then
+    -- 銃器装備中にエイム入力（徒歩: INPUT_AIM[25] / 車内: INPUT_VEH_AIM[68]）を押している場合もカバー
+    if isArmed then
         if isTruthy(IsControlPressed(0, 25)) or isTruthy(IsDisabledControlPressed(0, 25)) then
             return true
+        end
+        if isTruthy(IsPedInAnyVehicle(ped, false)) then
+            if isTruthy(IsControlPressed(0, 68)) or isTruthy(IsDisabledControlPressed(0, 68)) then
+                return true
+            end
         end
     end
 
@@ -247,9 +259,19 @@ local function evaluateShouldShowReticle(ped, weaponHash, isArmed, isAiming)
         return false
     end
 
-    -- 車両乗車中判定
-    if isTruthy(IsPedInAnyVehicle(ped, false)) and (Config and Config.AllowVehicleDriveby == false) then
-        return false
+    -- 車両乗車中判定（運転席 / 同乗者席の個別Config制御・デフォルトは両方 false）
+    local veh = GetVehiclePedIsIn(ped, false)
+    if veh and veh ~= 0 then
+        local isDriver = (GetPedInVehicleSeat(veh, -1) == ped)
+        if isDriver then
+            if not (Config and Config.AllowDriverReticle == true) then
+                return false
+            end
+        else
+            if not (Config and Config.AllowPassengerReticle == true) then
+                return false
+            end
+        end
     end
 
     -- スナイパースコープ等のフルスクリーンスコープ覗き込み中
